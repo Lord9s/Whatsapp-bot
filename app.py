@@ -66,7 +66,7 @@ def webhook():
 
 # Send message back to WhatsApp
 def send_message(recipient_id, message_text):
-    url = "https://graph.facebook.com/v15.0/{phone_number_id}/messages"
+    url = "https://graph.facebook.com/v21.0/{phone_number_id}/messages"
     params = {"access_token": WHATSAPP_TOKEN}
     headers = {"Content-Type": "application/json"}
     data = {
@@ -86,7 +86,7 @@ def send_message(recipient_id, message_text):
 # Test WhatsApp token validity
 @app.before_request
 def check_whatsapp_token():
-    test_url = f"https://graph.facebook.com/v15.0/me?access_token={WHATSAPP_TOKEN}"
+    test_url = f"https://graph.facebook.com/v21.0/me?access_token={WHATSAPP_TOKEN}"
     response = requests.get(test_url)
     if response.status_code == 200:
         logger.info("WhatsApp token is valid.")
