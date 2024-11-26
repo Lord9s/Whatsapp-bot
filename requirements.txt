@@ -4,4 +4,4 @@ python-dotenv
 google-generativeai
 beautifulsoup4
 Flask
-Flask-cors
+flask-cors
