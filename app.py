@@ -1,92 +1,95 @@
 import os
 import logging
-import time
+from flask import Flask, request
 from dotenv import load_dotenv
+from flask_cors import CORS
+import telegram
 from telegram import Update
-from telegram.ext import (
-    Updater,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    CallbackContext,
-)
-
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import messageHandler  # Import the message handler module
+import time
 
 # Load environment variables
 load_dotenv()
 
-# Telegram Bot Token
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-PREFIX = os.getenv("PREFIX", "/")
+# Flask app setup
+app = Flask(__name__)
+CORS(app)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "my_telegram_bot")
+PREFIX = os.getenv("PREFIX", "/")
+
+# Initialize Telegram bot
+bot = telegram.Bot(token=TELEGRAM_TOKEN)
+
+# Start time tracking
 start_time = time.time()
 
-# Expose the start_time so CMD can access it
+
 def get_bot_uptime():
     return time.time() - start_time
 
-# Helper function to format uptime
-def format_duration(seconds):
-    days, seconds = divmod(seconds, 86400)
-    hours, seconds = divmod(seconds, 3600)
-    minutes, seconds = divmod(seconds, 60)
-    return f"{int(days)}d {int(hours)}h {int(minutes)}m {int(seconds)}s"
 
-# Start command handler
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Hey buddy 😁, I am KORA AI HOW CAN I HELP YOU ?")
+# Command Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the /start command."""
+    user = update.effective_user
+    await update.message.reply_text(f"Hello, {user.first_name}! I am your bot, ready to assist you!")
 
-# Uptime command handler
-def uptime(update: Update, context: CallbackContext):
-    uptime_seconds = get_bot_uptime()
-    uptime_str = format_duration(uptime_seconds)
-    update.message.reply_text(f"🤖 Bot Uptime: {uptime_str}")
 
-# Message handler for text commands
-def handle_text_command(update: Update, context: CallbackContext):
-    message_text = update.message.text
-    if message_text.startswith(PREFIX):
-        command = message_text[len(PREFIX):]
+async def uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the /uptime command."""
+    uptime = get_bot_uptime()
+    await update.message.reply_text(f"I have been running for {uptime:.2f} seconds.")
+
+
+# Message Handlers
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles text messages."""
+    message = update.message.text
+
+    # Check if message is a command
+    if message.startswith(PREFIX):
+        command = message[len(PREFIX):]
         response = messageHandler.handle_text_command(command)
-        update.message.reply_text(response)
     else:
-        update.message.reply_text("🚫 Sorry, I didn't recognize that command type /help for Available Command.")
+        response = messageHandler.handle_text_message(message)
 
-# Message handler for general text
-def handle_text_message(update: Update, context: CallbackContext):
-    message_text = update.message.text
-    response = messageHandler.handle_text_message(message_text)
-    update.message.reply_text(response)
+    await update.message.reply_text(response)
 
-# Handler for unknown commands
-def unknown_command(update: Update, context: CallbackContext):
-    update.message.reply_text("🚫 The Command you are using does not exist type /help to view Available Command.")
 
-def main():
-    # Initialize the Updater and Dispatcher
-    updater = Updater(TELEGRAM_BOT_TOKEN)
-dispatcher = updater.dispatcher
+async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles unknown commands."""
+    await update.message.reply_text("Sorry, I didn't understand that command.")
 
-    # Command handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("uptime", uptime))
 
-    # Message handlers
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text_message))
-    dispatcher.add_handler(MessageHandler(Filters.command, handle_text_command))
+# Initialize Telegram bot application
+app_telegram = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # Unknown command handler
-    dispatcher.add_handler(MessageHandler(Filters.command, unknown_command))
+# Add handlers to the bot
+app_telegram.add_handler(CommandHandler("start", start))
+app_telegram.add_handler(CommandHandler("uptime", uptime))
+app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+app_telegram.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
 
-    # Start the bot
-    updater.start_polling()
-    logger.info("Bot is running...")
-    updater.idle()
 
-if __name__ == "__main__":
-    main()
+# Flask route to set webhook
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Handles Telegram webhook updates."""
+    json_data = request.get_json()
+    update = Update.de_json(json_data, bot)
+    app_telegram.process_update(update)
+    return "EVENT_RECEIVED", 200
+
+
+if __name__ == '__main__':
+    # Start the Flask app
+    webhook_url = os.getenv("WEBHOOK_URL", "https://your-server-url/webhook")
+    bot.set_webhook(url=webhook_url)
+    app.run(debug=True, host='0.0.0.0', port=3000)
