@@ -69,8 +69,8 @@ def unknown_command(update: Update, context: CallbackContext):
 
 def main():
     # Initialize the Updater and Dispatcher
-    updater = Updater(token=TELEGRAM_BOT_TOKEN)
-    dispatcher = updater.dispatcher
+    updater = Updater(TELEGRAM_BOT_TOKEN)
+dispatcher = updater.dispatcher
 
     # Command handlers
     dispatcher.add_handler(CommandHandler("start", start))
