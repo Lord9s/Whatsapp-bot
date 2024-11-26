@@ -94,7 +94,7 @@ app_telegram.add_handler(CommandHandler("start", start))
 app_telegram.add_handler(CommandHandler("uptime", uptime))
 app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app_telegram.add_handler(MessageHandler(filters.PHOTO, handle_attachment))  # Handle attachments
-app_telegram.add_handler(MessageHaalndler(filters.COMMAND, handle_unknown))
+app_telegram.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
 
 
 # Start the bot
