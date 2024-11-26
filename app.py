@@ -17,7 +17,10 @@ app = Flask(__name__)
 CORS(app)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -38,6 +41,7 @@ except telegram.error.InvalidToken:
 # Start time tracking
 start_time = time.time()
 
+
 def get_bot_uptime():
     return time.time() - start_time
 
@@ -46,44 +50,69 @@ def get_bot_uptime():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /start command."""
     user = update.effective_user
-    await update.message.reply_text(f"Hello, {user.first_name}! I am your bot, ready to assist you!")
+    logger.info(f"Received /start command from user: {user.username} ({user.id})")
+    response = f"Hello, {user.first_name}! I am your bot, ready to assist you!"
+    logger.info(f"Bot response: {response}")
+    await update.message.reply_text(response)
 
 
 async def uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /uptime command."""
     uptime = get_bot_uptime()
-    await update.message.reply_text(f"I have been running for {uptime:.2f} seconds.")
+    response = f"I have been running for {uptime:.2f} seconds."
+    logger.info(f"Received /uptime command. Bot response: {response}")
+    await update.message.reply_text(response)
 
 
 # Message Handlers
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles text messages."""
-    message = update.message.text
+    try:
+        message = update.message.text
+        user = update.effective_user
+        logger.info(f"Received message from user {user.username} ({user.id}): {message}")
 
-    # Check if message is a command
-    if message.startswith(PREFIX):
-        command = message[len(PREFIX):]
-        response = messageHandler.handle_text_command(command)
-    else:
-        response = messageHandler.handle_text_message(message)
+        if message.startswith(PREFIX):
+            command = message[len(PREFIX):]
+            response = messageHandler.handle_text_command(command)
+        else:
+            response = messageHandler.handle_text_message(message)
 
-    await update.message.reply_text(response)
+        logger.info(f"Bot response to user {user.username} ({user.id}): {response}")
+        await update.message.reply_text(response)
+    except Exception as e:
+        logger.error(f"Error handling message: {str(e)}")
+        await update.message.reply_text("🚨 An error occurred while processing your message.")
 
 
 async def handle_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles attachments (e.g., images, files)."""
-    if update.message.photo:
-        # Handle photo attachment
-        response = messageHandler.handle_attachment(update.message.photo)
-    else:
-        response = "Sorry, I cannot process this attachment type."
-    
-    await update.message.reply_text(response)
+    try:
+        user = update.effective_user
+        if update.message.photo:
+            # Get the largest available photo
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+
+            logger.info(f"Received photo from user {user.username} ({user.id})")
+            response = messageHandler.handle_attachment(photo_bytes, attachment_type="image")
+        else:
+            response = "Sorry, I cannot process this attachment type."
+
+        logger.info(f"Bot response to user {user.username} ({user.id}): {response}")
+        await update.message.reply_text(response)
+    except Exception as e:
+        logger.error(f"Error handling attachment: {str(e)}")
+        await update.message.reply_text("🚨 An error occurred while processing your attachment.")
 
 
 async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles unknown commands."""
-    await update.message.reply_text("Sorry, I didn't understand that command.")
+    user = update.effective_user
+    logger.warning(f"Unknown command received from user {user.username} ({user.id}): {update.message.text}")
+    response = "Sorry, I didn't understand that command."
+    logger.info(f"Bot response to user {user.username} ({user.id}): {response}")
+    await update.message.reply_text(response)
 
 
 # Initialize Telegram bot application
