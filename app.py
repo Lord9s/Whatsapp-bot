@@ -75,10 +75,9 @@ async def handle_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if update.message.photo:
         # Handle photo attachment
         response = messageHandler.handle_attachment(update.message.photo)
-    elif update.message.document:
-        # Handle document attachment
-        response = messageHandler.handle_attachment(update.message.document)
-    else:
+    
+    
+  else:
         # For unsupported attachment types
         response = "Sorry, I cannot process this attachment type."
     
@@ -97,8 +96,8 @@ app_telegram = Application.builder().token(TELEGRAM_TOKEN).build()
 app_telegram.add_handler(CommandHandler("start", start))
 app_telegram.add_handler(CommandHandler("uptime", uptime))
 app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app_telegram.add_handler(MessageHandler(filters.PHOTO | filters.Document, handle_attachment))  # Handle attachments
-app_telegram.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
+app_telegram.add_handler(MessageHandler(filters.PHOTO, handle_attachment))  # Handle attachments
+app_telegram.add_handler(MessageHaalndler(filters.COMMAND, handle_unknown))
 
 
 # Start the bot
