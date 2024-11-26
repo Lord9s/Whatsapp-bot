@@ -1,6 +1,6 @@
-Flask
+telegram 
 requests
 python-dotenv
-flask-cors
+
 google-generativeai
 beautifulsoup4
