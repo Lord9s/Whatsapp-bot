@@ -76,7 +76,6 @@ async def handle_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Handle photo attachment
         response = messageHandler.handle_attachment(update.message.photo)
     else:
-        # For unsupported attachment types
         response = "Sorry, I cannot process this attachment type."
     
     await update.message.reply_text(response)
