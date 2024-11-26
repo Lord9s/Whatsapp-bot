@@ -1,97 +1,28 @@
 import os
 import logging
-from flask import Flask, request, jsonify
-from dotenv import load_dotenv
-from flask_cors import CORS
-import requests
-import messageHandler  # Import your custom message handler module
 import time
+from dotenv import load_dotenv
+from telegram import Update
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    MessageHandler,
+    Filters,
+    CallbackContext,
+)
+
+import messageHandler  # Import the message handler module
 
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
-CORS(app)
+# Telegram Bot Token
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+PREFIX = os.getenv("PREFIX", "/")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
-
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-PREFIX = os.getenv("PREFIX", "/")
-
-# Verification endpoint for WhatsApp webhook
-@app.route('/webhook', methods=['GET'])
-def verify():
-    token_sent = request.args.get("hub.verify_token")
-    if token_sent == VERIFY_TOKEN:
-        logger.info("Webhook verification successful.")
-        return request.args.get("hub.challenge")
-    logger.error("Webhook verification failed: invalid verify token.")
-    return "Verification failed", 403
-
-# Main webhook endpoint to handle messages
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.get_json()
-    logger.info("Received data: %s", data)
-
-    # Check if the webhook is from WhatsApp
-    if data.get("object") == "whatsapp_business_account":
-        for entry in data.get("entry", []):
-            for change in entry.get("changes", []):
-                value = change.get("value", {})
-                messages = value.get("messages", [])
-                
-                for message in messages:
-                    sender_id = message["from"]
-                    message_text = message.get("text", {}).get("body")
-                    message_type = message.get("type")
-                    message_command = message_text if message_text and message_text.startswith(PREFIX) else None
-
-                    # Check if message has text with a command prefix
-                    if message_command:
-                        response = messageHandler.handle_text_command(message_command[len(PREFIX):])
-                    elif message_type == "image" or message_type == "video" or message_type == "document":
-                        response = messageHandler.handle_attachment(message)
-                    elif message_text:
-                        response = messageHandler.handle_text_message(message_text)
-                    else:
-                        response = "Sorry, I didn't understand that message."
-
-                    # Send the response to the user on WhatsApp
-                    send_message(sender_id, response)
-    return "EVENT_RECEIVED", 200
-
-# Send message back to WhatsApp
-def send_message(recipient_id, message_text):
-    url = "https://graph.facebook.com/v21.0/{phone_number_id}/messages"
-    params = {"access_token": WHATSAPP_TOKEN}
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "messaging_product": "whatsapp",
-        "to": recipient_id,
-        "type": "text",
-        "text": {"body": message_text}
-    }
-    
-    response = requests.post(url, headers=headers, params=params, json=data)
-    
-    if response.status_code == 200:
-        logger.info("Message sent successfully to user %s", recipient_id)
-    else:
-        logger.error("Failed to send message: %s", response.json())
-
-# Test WhatsApp token validity
-@app.before_request
-def check_whatsapp_token():
-    test_url = f"https://graph.facebook.com/v21.0/me?access_token={WHATSAPP_TOKEN}"
-    response = requests.get(test_url)
-    if response.status_code == 200:
-        logger.info("WhatsApp token is valid.")
-    else:
-        logger.error("Invalid WhatsApp token: %s", response.json())
 
 start_time = time.time()
 
@@ -99,5 +30,63 @@ start_time = time.time()
 def get_bot_uptime():
     return time.time() - start_time
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=3000)
+# Helper function to format uptime
+def format_duration(seconds):
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    return f"{int(days)}d {int(hours)}h {int(minutes)}m {int(seconds)}s"
+
+# Start command handler
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("Hey buddy 😁, I am KORA AI HOW CAN I HELP YOU ?")
+
+# Uptime command handler
+def uptime(update: Update, context: CallbackContext):
+    uptime_seconds = get_bot_uptime()
+    uptime_str = format_duration(uptime_seconds)
+    update.message.reply_text(f"🤖 Bot Uptime: {uptime_str}")
+
+# Message handler for text commands
+def handle_text_command(update: Update, context: CallbackContext):
+    message_text = update.message.text
+    if message_text.startswith(PREFIX):
+        command = message_text[len(PREFIX):]
+        response = messageHandler.handle_text_command(command)
+        update.message.reply_text(response)
+    else:
+        update.message.reply_text("🚫 Sorry, I didn't recognize that command type /help for Available Command.")
+
+# Message handler for general text
+def handle_text_message(update: Update, context: CallbackContext):
+    message_text = update.message.text
+    response = messageHandler.handle_text_message(message_text)
+    update.message.reply_text(response)
+
+# Handler for unknown commands
+def unknown_command(update: Update, context: CallbackContext):
+    update.message.reply_text("🚫 The Command you are using does not exist type /help to view Available Command.")
+
+def main():
+    # Initialize the Updater and Dispatcher
+    updater = Updater(token=TELEGRAM_BOT_TOKEN)
+    dispatcher = updater.dispatcher
+
+    # Command handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("uptime", uptime))
+
+    # Message handlers
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text_message))
+    dispatcher.add_handler(MessageHandler(Filters.command, handle_text_command))
+
+    # Unknown command handler
+    dispatcher.add_handler(MessageHandler(Filters.command, unknown_command))
+
+    # Start the bot
+    updater.start_polling()
+    logger.info("Bot is running...")
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
