@@ -1,6 +1,5 @@
-telegram 
+python-telegram-bot
 requests
 python-dotenv
-
 google-generativeai
 beautifulsoup4
