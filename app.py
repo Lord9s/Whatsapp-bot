@@ -4,6 +4,7 @@ from flask import Flask, request
 from dotenv import load_dotenv
 from flask_cors import CORS
 import asyncio
+import threading
 import telegram
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -18,7 +19,10 @@ app = Flask(__name__)
 CORS(app)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -107,6 +111,18 @@ app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_
 app_telegram.add_handler(MessageHandler(filters.PHOTO, handle_attachment))  # Handle attachments
 app_telegram.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
 
-# Start the Flask app
+# Threaded function to run Telegram bot polling
+def run_telegram_bot():
+    logger.info("Starting Telegram bot polling...")
+    app_telegram.run_polling()
+
+# Flask endpoint to test the bot's functionality
+@app.route('/health', methods=['GET'])
+def health_check():
+    return "Bot is running!", 200
+
+# Main entry point
 if __name__ == '__main__':
+    # Run Flask and Telegram bot in separate threads
+    threading.Thread(target=run_telegram_bot, daemon=True).start()
     app.run(debug=False, host='0.0.0.0', port=3000)
