@@ -5,7 +5,7 @@ import logging
 # Configure logging
 logger = logging.getLogger()
 
-def execute():
+def execute(message=None):
     response = "📜 **KORA AI Command List** 📜\n\n"
     response += "Here are the available commands:\n\n"
 
