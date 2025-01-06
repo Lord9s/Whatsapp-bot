@@ -173,7 +173,7 @@ def webhook():
                         # Handle media attachments
                         elif message_type in ["image", "audio", "video", "document"]:
                             media_url = message[message_type]["url"]
-                            response = messageHandler.handle_attachment(media_url, message_type)
+                            response = messageHandler.handle_attachment(media_url, message_type,file_extension)
                             send_whatsapp_message(recipient_id, response)
     return "EVENT_RECEIVED", 200
 
