@@ -1,128 +1,182 @@
 import os
 import logging
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from flask_cors import CORS
-import asyncio
-import threading
-import telegram
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import messageHandler  # Import the message handler module
+import requests
+import messageHandler  # Import your message handler module
 import time
+import sqlite3
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
 
-# Flask app setup
 app = Flask(__name__)
 CORS(app)
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-BOT_USERNAME = os.getenv("BOT_USERNAME", "my_telegram_bot")
+WHATSAPP_API_TOKEN = os.getenv("WHATSAPP_API_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PREFIX = os.getenv("PREFIX", "/")
 
-# Initialize Telegram bot
-bot = telegram.Bot(token=TELEGRAM_TOKEN)
+# SQLite Database Initialization
+DB_PATH = "messages.db"
 
-# Validate the token asynchronously
-async def validate_token():
-    try:
-        await bot.get_me()  # Test the token by getting bot details
-        logger.info("Telegram Bot Token is valid.")
-    except telegram.error.InvalidToken:
-        logger.error("Invalid Telegram Token. Please check your token.")
-        exit(1)  # Exit if the token is invalid
+def init_db():
+    """Initialize the SQLite database and create tables if they don't exist."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id TEXT,
+                message TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
 
-# Run token validation
-asyncio.run(validate_token())
+init_db()
 
-# Start time tracking
-start_time = time.time()
+def save_message(sender_id, message):
+    """Save a message to the database."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO messages (sender_id, message) VALUES (?, ?)", (sender_id, message))
+        conn.commit()
 
-def get_bot_uptime():
-    return time.time() - start_time
+def get_recent_messages(sender_id):
+    """Retrieve messages from the past 24 hours for a specific sender."""
+    cutoff_time = datetime.now() - timedelta(hours=24)
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT message FROM messages 
+            WHERE sender_id = ? AND timestamp >= ?
+            ORDER BY timestamp ASC
+        """, (sender_id, cutoff_time))
+        return [row[0] for row in cursor.fetchall()]
 
-# Command Handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the /start command."""
-    user = update.effective_user
-    logger.info(f"User message: {update.message.text}")
-    response = f"Hello, {user.first_name}! I am your bot, ready to assist you!"
-    logger.info(f"Bot response: {response}")
-    await update.message.reply_text(response)
+def cleanup_old_messages():
+    """Delete messages older than 24 hours."""
+    cutoff_time = datetime.now() - timedelta(hours=24)
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM messages WHERE timestamp < ?", (cutoff_time,))
+        conn.commit()
 
-async def uptime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the /uptime command."""
-    logger.info(f"User message: {update.message.text}")
-    uptime = get_bot_uptime()
-    response = f"I have been running for {uptime:.2f} seconds."
-    logger.info(f"Bot response: {response}")
-    await update.message.reply_text(response)
+# Function to split long messages into chunks
+def split_message(message, limit=4096):
+    """Split a message into chunks within the WhatsApp character limit."""
+    return [message[i:i+limit] for i in range(0, len(message), limit)]
 
-# Message Handlers
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles text messages."""
-    message = update.message.text
-    logger.info(f"User message: {message}")
+# Function to send WhatsApp messages
+def send_whatsapp_message(recipient_id, message):
+    url = f"https://graph.facebook.com/v16.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
 
-    # Check if message is a command
-    if message.startswith(PREFIX):
-        command = message[len(PREFIX):]
-        response = messageHandler.handle_text_command(command)
+    if isinstance(message, dict):  # Media or structured message
+        payload = message
+    else:  # Text message
+        # Split long messages into chunks
+        message_chunks = split_message(message)
+        for chunk in message_chunks:
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": recipient_id,
+                "type": "text",
+                "text": {"body": chunk},
+            }
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code != 200:
+                logger.error("Failed to send message: %s", response.json())
+                break
+
+# Handle attachments (image, audio, etc.)
+def send_media_message(recipient_id, media_type, media_url):
+    url = f"https://graph.facebook.com/v16.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient_id,
+        "type": media_type,
+        media_type: {
+            "link": media_url
+        }
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        logger.info(f"{media_type.capitalize()} message sent successfully to {recipient_id}")
     else:
-        response = messageHandler.handle_text_message(message)
+        logger.error("Failed to send media message: %s", response.json())
 
-    logger.info(f"Bot response: {response}")
-    await update.message.reply_text(response)
+# Webhook verification for WhatsApp
+@app.route('/webhook', methods=['GET'])
+def verify():
+    token_sent = request.args.get("hub.verify_token")
+    if token_sent == VERIFY_TOKEN:
+        logger.info("Webhook verification successful.")
+        return request.args.get("hub.challenge", "")
+    logger.error("Webhook verification failed: invalid verify token.")
+    return "Verification failed", 403
 
-async def handle_attachment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles attachments (e.g., images, files)."""
-    if update.message.photo:
-        logger.info("User sent a photo.")
-        response = messageHandler.handle_attachment(update.message.photo)
-    else:
-        response = "Sorry, I cannot process this attachment type."
+# Main webhook endpoint to handle WhatsApp messages
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json()
+    logger.info("Received data: %s", data)
 
-    logger.info(f"Bot response: {response}")
-    await update.message.reply_text(response)
+    cleanup_old_messages()  # Clean up old messages on every new message
 
-async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles unknown commands."""
-    logger.info(f"User message: {update.message.text}")
-    response = "Sorry, I didn't understand that command."
-    logger.info(f"Bot response: {response}")
-    await update.message.reply_text(response)
+    if data.get("object") == "whatsapp_business_account":
+        for entry in data["entry"]:
+            for change in entry["changes"]:
+                if "messages" in change["value"]:
+                    for message in change["value"]["messages"]:
+                        recipient_id = message["from"]
+                        message_type = message.get("type")
+                        message_text = message.get("text", {}).get("body")
+                        message_command = message_text if message_text and message_text.startswith(PREFIX) else None
 
-# Initialize Telegram bot application
-app_telegram = Application.builder().token(TELEGRAM_TOKEN).build()
+                        # Save the message to the database
+                        if message_text:
+                            save_message(recipient_id, message_text)
 
-# Add handlers to the bot
-app_telegram.add_handler(CommandHandler("start", start))
-app_telegram.add_handler(CommandHandler("uptime", uptime))
-app_telegram.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app_telegram.add_handler(MessageHandler(filters.PHOTO, handle_attachment))  # Handle attachments
-app_telegram.add_handler(MessageHandler(filters.COMMAND, handle_unknown))
+                        # Handle text commands
+                        if message_command:
+                            sliced_message = message_command[len(PREFIX):]
+                            command_name = sliced_message.split()[0]
+                            command_message = sliced_message[len(command_name):].strip()
 
-# Threaded function to run Telegram bot polling
-def run_telegram_bot():
-    logger.info("Starting Telegram bot polling...")
-    app_telegram.run_polling()
+                            response = messageHandler.handle_text_command(command_name, command_message)
+                            send_whatsapp_message(recipient_id, response["data"] if response.get("success") else "⚠️ Error processing your command.")
 
-# Flask endpoint to test the bot's functionality
-@app.route('/health', methods=['GET'])
-def health_check():
-    return "Bot is running!", 200
+                        # Handle regular text messages
+                        elif message_type == "text":
+                            recent_messages = get_recent_messages(recipient_id)
+                            bot_response = messageHandler.handle_text_message(message_text, recent_messages)
+                            send_whatsapp_message(recipient_id, bot_response)
 
-# Main entry point
+                        # Handle media attachments
+                        elif message_type in ["image", "audio", "video", "document"]:
+                            media_url = message[message_type]["url"]
+                            response = messageHandler.handle_attachment(media_url, message_type)
+                            send_whatsapp_message(recipient_id, response)
+    return "EVENT_RECEIVED", 200
+
+# Start the Flask app
 if __name__ == '__main__':
-    # Run Flask and Telegram bot in separate threads
-    threading.Thread(target=run_telegram_bot, daemon=True).start()
-    app.run(debug=False, host='0.0.0.0', port=3000)
+    app.run(debug=True, host='0.0.0.0', port=3000)
