@@ -5,42 +5,34 @@ from dotenv import load_dotenv
 import logging
 import requests
 from io import BytesIO
+from PyPDF2 import PdfReader
+from docx import Document
+import mimetypes
 import urllib3
 
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Load  variables
+# Load environment variables
 load_dotenv()
 
-#  logging
+# Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # System instruction for text conversations
 system_instruction = """
-*System Name:*Your Name is KORA AI an AI Assistance created by Kolawole Suleiman. you are running on Sman V1.0 which is latest version build with high programming technique. you should assist to all topics
-*owner:* You are owned and created by Kolawole Suleiman
-*model/version:* you are currently running on Sman V1.0
-*Note:* Respond helpfully and informatively to a wide range of prompts and questions.  Prioritize accuracy and clarity in your responses.  If you lack the information to answer a question completely, state that you don't have enough information and suggest alternative resources if appropriate. Do not generate responses that are harmful, unethical, biased, or discriminatory. Maintain a professional and courteous tone in all interactions.
-*Owner information:*Your Creator Kolawole Suleiman created you using high programming technique and skills developed you using complex python and he can be contacted via Facebook on "https://www.facebook.com/profile.php?id=61553565805276" you should explain your creator in a very attractive way and mesmerizing only if you were asked.
-*Do not say anything about your identity unless if you were asked and don't say your owner information unless if you were asked. always include emojis in your speech to make it interactive.
-*You should respond in a professional and mature way.
-*Respond shortly unless if asked to respond long, and ignore superfluous words by sending messages related to ignore.
-*Be comprehensive. if asked a question list advantage, disadvantage, importance and necessary informations.
-Do not give response above 2000 characters .
-Things you can do = {
-*generate image*:*You Can generate images using /gen <prompt> which is part of your command*.
-*analyse image*:*You can analyse, interpret, explain images*.
-*send mail*:*You can Send email messages using "/mail recipient_email, Message title, message body" which is part of your command.
-}
+*System Name:* Your Name is KORA AI, an AI Assistant created by Kolawole Suleiman. 
+You are running on Sman V1.0, the latest version built with high programming techniques. 
+You should assist with all topics.
+...
 """
 
 # Image analysis prompt
-IMAGE_ANALYSIS_PROMPT = """Analyize the image keenly and explain it's content,if it's a text translate it and say the language used"""
+IMAGE_ANALYSIS_PROMPT = """Analyze the image keenly and explain its content. If it's text, translate it and identify the language."""
 
 def initialize_text_model():
-    """Initialize Gemini model for text processing"""
+    """Initialize Gemini model for text processing."""
     genai.configure(api_key=os.getenv("GEMINI_TEXT_API_KEY"))
     return genai.GenerativeModel(
         model_name="gemini-1.5-flash",
@@ -53,78 +45,88 @@ def initialize_text_model():
     )
 
 def initialize_image_model():
-    """Initialize Gemini model for image processing"""
+    """Initialize Gemini model for image processing."""
     genai.configure(api_key=os.getenv("GEMINI_IMAGE_API_KEY"))
     return genai.GenerativeModel("gemini-1.5-pro")
 
 def handle_text_message(user_message):
-    
+    """Handle incoming text messages."""
     try:
         logger.info("Processing text message: %s", user_message)
-        
-        # Initialize text model and start chat
         chat = initialize_text_model().start_chat(history=[])
-        
-        # Generate response
         response = chat.send_message(f"{system_instruction}\n\nHuman: {user_message}")
         return response.text
-
     except Exception as e:
         logger.error("Error processing text message: %s", str(e))
         return "😔 Sorry, I encountered an error processing your message."
 
-def handle_text_command(command_name,message):
-    """Handle text commands from CMD folder"""
+def handle_text_command(command_name, message):
+    """Handle text commands from CMD folder."""
     try:
         cmd_module = importlib.import_module(f"CMD.{command_name}")
         return cmd_module.execute(message)
     except ImportError:
         logger.warning("Command %s not found.", command_name)
-        return "🚫 The Command you are using does not exist, Type /help to view Available Command"
+        return "🚫 The command you are using does not exist. Type /help to view available commands."
 
-def handle_attachment(attachment_data, attachment_type="image"):
-    
-    if attachment_type != "image":
-        return "🚫 Unsupported attachment type. Please send an image."
+def handle_attachment(attachment_data, attachment_type="file", file_extension=None):
+    """Handle attachments including images, PDFs, text files, etc."""
+    logger.info(f"Processing {attachment_type} attachment with extension: {file_extension}")
 
-    logger.info("Processing image attachment")
-    
-    try:
-        # Upload to im.ge
-        upload_url = "https://im.ge/api/1/upload"
-        api_key = os.getenv('IMGE_API_KEY')
+    if attachment_type == "image":
+        try:
+            # Upload the image to im.ge
+            upload_url = "https://im.ge/api/1/upload"
+            api_key = os.getenv('IMGE_API_KEY')
+            files = {"source": ("attachment.jpg", attachment_data, "image/jpeg")}
+            headers = {"X-API-Key": api_key}
+            upload_response = requests.post(upload_url, files=files, headers=headers, verify=False)
+            upload_response.raise_for_status()
+            image_url = upload_response.json()['image']['url']
+            logger.info(f"Image uploaded successfully: {image_url}")
 
-        files = {"source": ("attachment.jpg", attachment_data, "image/jpeg")}
-        headers = {"X-API-Key": api_key}
+            # Download image for Gemini processing
+            image_response = requests.get(image_url, verify=False)
+            image_response.raise_for_status()
+            image_data = BytesIO(image_response.content).getvalue()
 
-        # Upload image
-        upload_response = requests.post(upload_url, files=files, headers=headers, verify=False)
-        upload_response.raise_for_status()
-
-        # Get image URL
-        image_url = upload_response.json()['image']['url']
-        logger.info(f"Image uploaded successfully: {image_url}")
-
-        # Download image for Gemini processing
-        image_response = requests.get(image_url, verify=False)
-        image_response.raise_for_status()
-        image_data = BytesIO(image_response.content).getvalue()
-
-        # Initialize image & analyze
-        model = initialize_image_model()
-        response = model.generate_content([
-            IMAGE_ANALYSIS_PROMPT,
-            {'mime_type': 'image/jpeg', 'data': image_data}
-        ])
-
-        return f"""🖼️ Image Analysis:
+            # Analyze the image
+            model = initialize_image_model()
+            response = model.generate_content([
+                IMAGE_ANALYSIS_PROMPT,
+                {'mime_type': 'image/jpeg', 'data': image_data}
+            ])
+            return f"""🖼️ Image Analysis:
 {response.text}
 
 🔗 View Image: {image_url}"""
+        except Exception as e:
+            logger.error(f"Error processing image attachment: {str(e)}")
+            return "🚨 Error analyzing the image. Please try again later."
 
-    except requests.RequestException as e:
-        logger.error(f"Image upload/download error: {str(e)}")
-        return "🚨 Error processing the image. Please try again later."
-    except Exception as e:
-        logger.error(f"Image analysis error: {str(e)}")
-        return "🚨 Error analyzing the image. Please try again later."
+    elif attachment_type == "file":
+        try:
+            # Handle different file types
+            if file_extension in ["pdf"]:
+                reader = PdfReader(BytesIO(attachment_data))
+                text = "\n".join(page.extract_text() for page in reader.pages)
+                return f"📄 PDF Content:\n{text[:1000]}...\n\n(Truncated to 1000 characters)"
+
+            elif file_extension in ["docx"]:
+                document = Document(BytesIO(attachment_data))
+                text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+                return f"📄 DOCX Content:\n{text[:1000]}...\n\n(Truncated to 1000 characters)"
+
+            elif file_extension in ["txt", "py"]:
+                text = attachment_data.decode("utf-8")
+                return f"📄 File Content:\n{text[:1000]}...\n\n(Truncated to 1000 characters)"
+
+            else:
+                return "🚫 Unsupported file type. Please send a valid text or document file."
+
+        except Exception as e:
+            logger.error(f"Error processing file attachment: {str(e)}")
+            return "🚨 Error reading the file. Please ensure it's a valid document."
+
+    else:
+        return "🚫 Unsupported attachment type. Please send an image or document file."
