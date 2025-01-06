@@ -10,27 +10,37 @@ import urllib3
 # Disable SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Load environment variables
+# Load  variables
 load_dotenv()
 
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+#  logging
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # System instruction for text conversations
 system_instruction = """
-*System Name:* Your Name is KORA AI...
-... [System instructions truncated for brevity]
+*System Name:*Your Name is KORA AI an AI Assistance created by Kolawole Suleiman. you are running on Sman V1.0 which is latest version build with high programming technique. you should assist to all topics
+*owner:* You are owned and created by Kolawole Suleiman
+*model/version:* you are currently running on Sman V1.0
+*Note:* Respond helpfully and informatively to a wide range of prompts and questions.  Prioritize accuracy and clarity in your responses.  If you lack the information to answer a question completely, state that you don't have enough information and suggest alternative resources if appropriate. Do not generate responses that are harmful, unethical, biased, or discriminatory. Maintain a professional and courteous tone in all interactions.
+*Owner information:*Your Creator Kolawole Suleiman created you using high programming technique and skills developed you using complex python and he can be contacted via Facebook on "https://www.facebook.com/profile.php?id=61553565805276" you should explain your creator in a very attractive way and mesmerizing only if you were asked.
+*Do not say anything about your identity unless if you were asked and don't say your owner information unless if you were asked. always include emojis in your speech to make it interactive.
+*You should respond in a professional and mature way.
+*Respond shortly unless if asked to respond long, and ignore superfluous words by sending messages related to ignore.
+*Be comprehensive. if asked a question list advantage, disadvantage, importance and necessary informations.
+Do not give response above 2000 characters .
+Things you can do = {
+*generate image*:*You Can generate images using /gen <prompt> which is part of your command*.
+*analyse image*:*You can analyse, interpret, explain images*.
+*send mail*:*You can Send email messages using "/mail recipient_email, Message title, message body" which is part of your command.
+}
 """
 
-IMAGE_ANALYSIS_PROMPT = "Analyze the image keenly and explain its content."
-
+# Image analysis prompt
+IMAGE_ANALYSIS_PROMPT = """Analyize the image keenly and explain it's content,if it's a text translate it and say the language used"""
 
 def initialize_text_model():
-    """Initialize Gemini model for text processing."""
+    """Initialize Gemini model for text processing"""
     genai.configure(api_key=os.getenv("GEMINI_TEXT_API_KEY"))
     return genai.GenerativeModel(
         model_name="gemini-1.5-flash",
@@ -42,69 +52,76 @@ def initialize_text_model():
         }
     )
 
-
 def initialize_image_model():
-    """Initialize Gemini model for image processing."""
+    """Initialize Gemini model for image processing"""
     genai.configure(api_key=os.getenv("GEMINI_IMAGE_API_KEY"))
     return genai.GenerativeModel("gemini-1.5-pro")
 
-
 def handle_text_message(user_message):
+    
     try:
-        logger.info(f"Processing text message: {user_message}")
+        logger.info("Processing text message: %s", user_message)
+        
+        # Initialize text model and start chat
         chat = initialize_text_model().start_chat(history=[])
+        
+        # Generate response
         response = chat.send_message(f"{system_instruction}\n\nHuman: {user_message}")
-        logger.info(f"Generated response: {response.text}")
         return response.text
+
     except Exception as e:
-        logger.error(f"Error processing text message: {str(e)}")
+        logger.error("Error processing text message: %s", str(e))
         return "😔 Sorry, I encountered an error processing your message."
 
-
-def handle_text_command(command_name):
+def handle_text_command(command_name,message):
+    """Handle text commands from CMD folder"""
     try:
-        logger.info(f"Processing command: {command_name}")
         cmd_module = importlib.import_module(f"CMD.{command_name}")
-        response = cmd_module.execute()
-        logger.info(f"Command response: {response}")
-        return response
+        return cmd_module.execute(message)
     except ImportError:
-        logger.warning(f"Command not found: {command_name}")
-        return "🚫 The Command you are using does not exist, Type /help to view Available Commands."
-
+        logger.warning("Command %s not found.", command_name)
+        return "🚫 The Command you are using does not exist, Type /help to view Available Command"
 
 def handle_attachment(attachment_data, attachment_type="image"):
+    
     if attachment_type != "image":
         return "🚫 Unsupported attachment type. Please send an image."
 
-    logger.info("Processing image attachment.")
+    logger.info("Processing image attachment")
+    
     try:
+        # Upload to im.ge
         upload_url = "https://im.ge/api/1/upload"
         api_key = os.getenv('IMGE_API_KEY')
 
         files = {"source": ("attachment.jpg", attachment_data, "image/jpeg")}
         headers = {"X-API-Key": api_key}
 
+        # Upload image
         upload_response = requests.post(upload_url, files=files, headers=headers, verify=False)
         upload_response.raise_for_status()
+
+        # Get image URL
         image_url = upload_response.json()['image']['url']
         logger.info(f"Image uploaded successfully: {image_url}")
 
+        # Download image for Gemini processing
         image_response = requests.get(image_url, verify=False)
         image_response.raise_for_status()
         image_data = BytesIO(image_response.content).getvalue()
 
+        # Initialize image & analyze
         model = initialize_image_model()
         response = model.generate_content([
             IMAGE_ANALYSIS_PROMPT,
             {'mime_type': 'image/jpeg', 'data': image_data}
         ])
 
-        logger.info(f"Image analysis response: {response.text}")
         return f"""🖼️ Image Analysis:
 {response.text}
 
 🔗 View Image: {image_url}"""
+
     except requests.RequestException as e:
         logger.error(f"Image upload/download error: {str(e)}")
         return "🚨 Error processing the image. Please try again later."
