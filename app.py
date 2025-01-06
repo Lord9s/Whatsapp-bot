@@ -159,9 +159,9 @@ def webhook():
                         if message_command:
                             sliced_message = message_command[len(PREFIX):]
                             command_name = sliced_message.split()[0]
-                            command_message = sliced_message[len(command_name):].strip()
+                            prompt = sliced_message[len(command_name):].strip()
 
-                            response = messageHandler.handle_text_command(command_name, message)
+                            response = messageHandler.handle_text_command(command_name, prompt)
                             send_whatsapp_message(recipient_id, response["data"] if response.get("success") else "⚠️ Error processing your command.")
 
                         # Handle regular text messages
