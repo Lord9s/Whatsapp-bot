@@ -60,25 +60,25 @@ def handle_text_message(user_message,recent_message):
         logger.error("Error processing text message: %s", str(e))
         return "😔 Sorry, I encountered an error processing your message."
 
-def handle_text_command(command_name, message):
+def handle_text_command(command_name, prompt):
     """Handle text commands from CMD folder."""
     try:
         cmd_module = importlib.import_module(f"CMD.{command_name}")
-        return cmd_module.execute(message)
+        return cmd_module.execute(prompt)
     except ImportError:
         logger.warning("Command %s not found.", command_name)
         return "🚫 The command you are using does not exist. Type /help to view available commands."
 
-def handle_attachment(attachment_data, attachment_type=None, file_extension=None):
+def handle_attachment(media_url,message_type=None,file_extension=None):
     """Handle attachments including images, PDFs, text files, etc."""
-    logger.info(f"Processing {attachment_type} attachment with extension: {file_extension}")
+    logger.info(f"Processing {message_type} attachment with extension: {file_extension}")
 
-    if attachment_type == "image":
+    if message_type == "image":
         try:
             # Upload the image to im.ge
             upload_url = "https://im.ge/api/1/upload"
             api_key = os.getenv('IMGE_API_KEY')
-            files = {"source": ("attachment.jpg", attachment_data, "image/jpeg")}
+            files = {"source": ("attachment.jpg", media_url, "image/jpeg")}
             headers = {"X-API-Key": api_key}
             upload_response = requests.post(upload_url, files=files, headers=headers, verify=False)
             upload_response.raise_for_status()
@@ -104,7 +104,7 @@ def handle_attachment(attachment_data, attachment_type=None, file_extension=None
             logger.error(f"Error processing image attachment: {str(e)}")
             return "🚨 Error analyzing the image. Please try again later."
 
-    elif attachment_type == "file":
+    elif message_type == "file":
         try:
             # Handle different file types
             if file_extension in ["pdf"]:
