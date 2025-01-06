@@ -1,6 +1,6 @@
-<h1 style="
+<p style="
   color: orange;
 ">
   WHATSAPP BOT
-</h1>
+</p>
 
