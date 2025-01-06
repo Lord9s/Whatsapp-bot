@@ -49,7 +49,7 @@ def initialize_image_model():
     genai.configure(api_key=os.getenv("GEMINI_IMAGE_API_KEY"))
     return genai.GenerativeModel("gemini-1.5-pro")
 
-def handle_text_message(user_message):
+def handle_text_message(user_message,recent_message):
     """Handle incoming text messages."""
     try:
         logger.info("Processing text message: %s", user_message)
@@ -69,7 +69,7 @@ def handle_text_command(command_name, message):
         logger.warning("Command %s not found.", command_name)
         return "🚫 The command you are using does not exist. Type /help to view available commands."
 
-def handle_attachment(attachment_data, attachment_type="file", file_extension=None):
+def handle_attachment(attachment_data, attachment_type=None, file_extension=None):
     """Handle attachments including images, PDFs, text files, etc."""
     logger.info(f"Processing {attachment_type} attachment with extension: {file_extension}")
 
