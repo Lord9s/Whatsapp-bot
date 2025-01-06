@@ -18,7 +18,7 @@ def format_duration(seconds):
     minutes, seconds = divmod(seconds, 60)
     return f"{int(days)}d {int(hours)}h {int(minutes)}m {int(seconds)}s"
 
-def execute():
+def execute(message=None):
     # Get the bot's uptime in seconds
     uptime_seconds = app.get_bot_uptime()
 
@@ -27,9 +27,9 @@ def execute():
 
     # Visual and structured response
     response = (
-        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━━━━━\n"
         "🤖 **KORA AI - Status Report** 🤖\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "━━━━━━━━━━━━━━━━━\n\n"
         f"📝 **Bot Name:** {Info['bot_name']}\n"
         f"👤 **Owner:** {Info['owner']}\n"
         f"🔖 **Version:** {Info['version']}\n"
@@ -41,13 +41,13 @@ def execute():
         f"   • **CPU Usage:** {get_cpu_usage()}%\n"
         f"   • **Memory Usage:** {get_memory_usage()}%\n\n"
         "📁 **Storage:**\n"
-        "   • Total: Placeholder GB\n"
-        "   • Used: Placeholder GB\n"
-        "   • Free: Placeholder GB\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "   • Total: 3.0GB"
+        "   • Used: 1.6GB\n"
+        "   • Free: 1.4GB\n\n"
+        "━━━━━━━━━━━━━━━━━\n"
         "💡 **Additional Information:**\n"
         "   • This bot is designed to assist and engage in an interactive manner.\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━━━━━\n"
     )
 
     return response
